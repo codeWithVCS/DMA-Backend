@@ -1,6 +1,7 @@
 package org.chandra.dmabackend.controller;
 
 import jakarta.validation.Valid;
+import org.chandra.dmabackend.dto.request.ExistingLoanRequest;
 import org.chandra.dmabackend.dto.request.NewLoanRequest;
 import org.chandra.dmabackend.dto.response.LoanResponse;
 import org.chandra.dmabackend.model.User;
@@ -35,6 +36,16 @@ public class LoanController {
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
+    }
+
+    @PostMapping("/api/loans/existing")
+    public ResponseEntity<LoanResponse> createExistingLoan(@AuthenticationPrincipal UserDetails user,
+                                                           @Valid @RequestBody ExistingLoanRequest request){
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(()->new IllegalArgumentException("Invalid Credentials"));
+        LoanResponse response = loanService.createExistingLoan(request, dbUser.getId());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
 }

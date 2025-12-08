@@ -1,6 +1,7 @@
 package org.chandra.dmabackend.service.impl;
 
 import org.chandra.dmabackend.dto.DerivedDates;
+import org.chandra.dmabackend.dto.request.ExistingLoanRequest;
 import org.chandra.dmabackend.dto.request.NewLoanRequest;
 import org.chandra.dmabackend.dto.response.LoanResponse;
 import org.chandra.dmabackend.model.Loan;
@@ -59,6 +60,64 @@ public class LoanServiceImpl implements LoanService {
         loan.setInterestRate(request.getAnnualInterestRate());
         loan.setTenureMonths(request.getTenureMonths());
         loan.setEmiAmount(emi);
+        loan.setStartDate(dates.getStartDate());
+        loan.setEmiStartDate(dates.getEmiStartDate());
+        loan.setForeclosureAllowed(request.getForeclosureAllowed());
+        loan.setForeclosurePenaltyPercent(request.getForeclosurePenaltyPercent());
+        loan.setPartPaymentAllowed(request.getPartPaymentAllowed());
+        loan.setStatus("ACTIVE");
+
+        Loan savedLoan = loanRepository.save(loan);
+
+        LoanResponse response = new LoanResponse();
+        response.setId(savedLoan.getId());
+        response.setLoanName(savedLoan.getLoanName());
+        response.setCategory(savedLoan.getCategory());
+        response.setLender(savedLoan.getLender());
+        response.setPrincipal(savedLoan.getPrincipal());
+        response.setAnnualInterestRate(savedLoan.getInterestRate());
+        response.setTenureMonths(savedLoan.getTenureMonths());
+        response.setEmiAmount(savedLoan.getEmiAmount());
+        response.setStartDate(savedLoan.getStartDate());
+        response.setEmiStartDate(savedLoan.getEmiStartDate());
+        response.setStatus(savedLoan.getStatus());
+
+        return response;
+    }
+
+    @Override
+    public LoanResponse createExistingLoan(ExistingLoanRequest request, Long userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        DerivedDates dates = loanDateService.deriveDates(
+                request.getStartDate(),
+                request.getEmiStartDate(),
+                request.getEmiDayOfMonth()
+        );
+
+        BigDecimal emiToUse;
+
+        if (request.getEmiAmount() != null) {
+            emiToUse = request.getEmiAmount();
+        } else {
+            emiToUse = emiCalculationService.calculateEmi(
+                    request.getPrincipal(),
+                    request.getAnnualInterestRate(),
+                    request.getTenureMonths()
+            );
+        }
+
+        Loan loan = new Loan();
+        loan.setUser(user);
+        loan.setLoanName(request.getLoanName());
+        loan.setCategory(request.getCategory());
+        loan.setLender(request.getLender());
+        loan.setPrincipal(request.getPrincipal());
+        loan.setInterestRate(request.getAnnualInterestRate());
+        loan.setTenureMonths(request.getTenureMonths());
+        loan.setEmiAmount(emiToUse);
         loan.setStartDate(dates.getStartDate());
         loan.setEmiStartDate(dates.getEmiStartDate());
         loan.setForeclosureAllowed(request.getForeclosureAllowed());
