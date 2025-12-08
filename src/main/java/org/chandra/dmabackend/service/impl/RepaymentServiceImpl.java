@@ -7,6 +7,7 @@ import org.chandra.dmabackend.repository.EmiScheduleRepository;
 import org.chandra.dmabackend.repository.LoanRepository;
 import org.chandra.dmabackend.repository.PaymentRepository;
 import org.chandra.dmabackend.service.EmiScheduleGeneratorService;
+import org.chandra.dmabackend.service.LoanStatusManager;
 import org.chandra.dmabackend.service.RepaymentService;
 import org.springframework.stereotype.Service;
 
@@ -24,14 +25,18 @@ public class RepaymentServiceImpl implements RepaymentService {
     private final LoanRepository loanRepository;
     private final PaymentRepository paymentRepository;
     private final EmiScheduleGeneratorService emiScheduleGeneratorService;
+    private final LoanStatusManager loanStatusManager;
 
     public RepaymentServiceImpl(EmiScheduleRepository emiScheduleRepository,
                                 LoanRepository loanRepository,
-                                PaymentRepository paymentRepository, EmiScheduleGeneratorService emiScheduleGeneratorService) {
+                                PaymentRepository paymentRepository,
+                                EmiScheduleGeneratorService emiScheduleGeneratorService,
+                                LoanStatusManager loanStatusManager) {
         this.emiScheduleRepository = emiScheduleRepository;
         this.loanRepository = loanRepository;
         this.paymentRepository = paymentRepository;
         this.emiScheduleGeneratorService = emiScheduleGeneratorService;
+        this.loanStatusManager = loanStatusManager;
     }
 
     @Override
@@ -43,72 +48,62 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         Loan loan = emi.getLoan();
 
-        if(!loan.getUser().getId().equals(userId)){
+        if (!loan.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("Unauthorized access");
         }
 
-        if("CLOSED".equalsIgnoreCase(loan.getStatus()) || "FORECLOSED".equalsIgnoreCase(loan.getStatus())){
-            throw new IllegalArgumentException("Loan is already closed");
+        if ("CLOSED".equalsIgnoreCase(loan.getStatus()) ||
+                "FORECLOSED".equalsIgnoreCase(loan.getStatus())) {
+            throw new IllegalArgumentException("Loan already closed");
         }
 
-        if(emi.getStatus() == EmiScheduleStatus.PAID || emi.getStatus() == EmiScheduleStatus.MISSED || emi.getStatus() == EmiScheduleStatus.FORECLOSED){
-            throw new IllegalArgumentException("EMI is not payable");
+        if (emi.getStatus() != EmiScheduleStatus.PENDING) {
+            throw new IllegalArgumentException("EMI cannot be paid");
         }
 
         BigDecimal emiAmount = emi.getEmiAmount();
 
-        if(amountPaid == null){
-            amountPaid = emiAmount;
-        }
+        if (amountPaid == null) amountPaid = emiAmount;
 
-        if(amountPaid.compareTo(emiAmount) < 0){
-            throw new IllegalArgumentException("Amount insufficient for EMI");
+        if (amountPaid.compareTo(emiAmount) < 0) {
+            throw new IllegalArgumentException("Insufficient EMI payment");
         }
 
         BigDecimal openingBalance = emi.getOpeningBalance();
         BigDecimal monthlyRate = loan.getInterestRate()
                 .divide(BigDecimal.valueOf(1200), 34, RoundingMode.HALF_UP);
 
-        BigDecimal interestComponent = openingBalance
-                .multiply(monthlyRate)
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
+        BigDecimal interestComponent = openingBalance.multiply(monthlyRate)
+                .setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal principalComponent = emiAmount
-                .subtract(interestComponent)
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
+        BigDecimal principalComponent = emiAmount.subtract(interestComponent)
+                .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal closingBalance = openingBalance.subtract(principalComponent);
-        if(closingBalance.compareTo(BigDecimal.ZERO) < 0){
-            closingBalance = BigDecimal.ZERO;
-        }
-        closingBalance = closingBalance.setScale(2, BigDecimal.ROUND_HALF_UP);
+        if (closingBalance.compareTo(BigDecimal.ZERO) < 0) closingBalance = BigDecimal.ZERO;
+        closingBalance = closingBalance.setScale(2, RoundingMode.HALF_UP);
 
         emi.setInterestComponent(interestComponent);
         emi.setPrincipalComponent(principalComponent);
         emi.setClosingBalance(closingBalance);
         emi.setStatus(EmiScheduleStatus.PAID);
-
         emiScheduleRepository.save(emi);
 
         loan.setPrincipal(closingBalance);
-
-        if(closingBalance.compareTo(BigDecimal.ZERO) == 0){
-            loan.setStatus("CLOSED");
-        }
-
         loanRepository.save(loan);
 
-        Payment payment  = new Payment();
-        payment.setLoan(loan);
-        payment.setPaymentDate(LocalDate.now());
-        payment.setAmountPaid(amountPaid);
-        payment.setAllocatedToInterest(interestComponent);
-        payment.setAllocatedToPrincipal(principalComponent);
-        payment.setOutstandingAfterPayment(closingBalance);
-        payment.setPaymentType(PaymentType.EMI);
-        payment.setRemarks("EMI payment for month " + emi.getMonthIndex());
+        Payment p = new Payment();
+        p.setLoan(loan);
+        p.setPaymentDate(LocalDate.now());
+        p.setAmountPaid(amountPaid);
+        p.setAllocatedToInterest(interestComponent);
+        p.setAllocatedToPrincipal(principalComponent);
+        p.setOutstandingAfterPayment(closingBalance);
+        p.setPaymentType(PaymentType.EMI);
+        p.setRemarks("EMI payment for month " + emi.getMonthIndex());
+        paymentRepository.save(p);
 
-        paymentRepository.save(payment);
+        loanStatusManager.updateLoanStatus(loan);
 
         PayEmiResponse response = new PayEmiResponse();
         response.setEmiId(emi.getId());
@@ -135,12 +130,12 @@ public class RepaymentServiceImpl implements RepaymentService {
         }
 
         if (!loan.getPartPaymentAllowed()) {
-            throw new IllegalArgumentException("Part-payment not allowed for this loan");
+            throw new IllegalArgumentException("Part-payment not allowed");
         }
 
         if ("CLOSED".equalsIgnoreCase(loan.getStatus()) ||
                 "FORECLOSED".equalsIgnoreCase(loan.getStatus())) {
-            throw new IllegalArgumentException("Loan is already closed");
+            throw new IllegalArgumentException("Loan closed");
         }
 
         if (amountPaid == null || amountPaid.compareTo(BigDecimal.valueOf(1000)) < 0) {
@@ -149,10 +144,7 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         BigDecimal oldPrincipal = loan.getPrincipal();
         BigDecimal newPrincipal = oldPrincipal.subtract(amountPaid);
-
-        if (newPrincipal.compareTo(BigDecimal.ZERO) < 0) {
-            newPrincipal = BigDecimal.ZERO;
-        }
+        if (newPrincipal.compareTo(BigDecimal.ZERO) < 0) newPrincipal = BigDecimal.ZERO;
 
         loan.setPrincipal(newPrincipal);
 
@@ -160,9 +152,9 @@ public class RepaymentServiceImpl implements RepaymentService {
                 emiScheduleRepository.findByLoanOrderByMonthIndexAsc(loan);
 
         EmiSchedule firstPendingEmi = schedule.stream()
-                .filter(emi -> emi.getStatus() == EmiScheduleStatus.PENDING)
+                .filter(e -> e.getStatus() == EmiScheduleStatus.PENDING)
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No pending EMI entries"));
+                .orElseThrow(() -> new IllegalArgumentException("No pending EMIs"));
 
         LocalDate nextDueDate = firstPendingEmi.getDueDate();
 
@@ -189,17 +181,8 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         List<EmiSchedule> newSchedule = emiScheduleGeneratorService.generateSchedule(loanView);
 
-        for (EmiSchedule emi : newSchedule) {
-            emi.setLoan(loan);
-        }
-
+        for (EmiSchedule e : newSchedule) e.setLoan(loan);
         emiScheduleRepository.saveAll(newSchedule);
-
-        if (newPrincipal.compareTo(BigDecimal.ZERO) == 0) {
-            loan.setStatus("CLOSED");
-        }
-
-        loanRepository.save(loan);
 
         Payment payment = new Payment();
         payment.setLoan(loan);
@@ -210,8 +193,9 @@ public class RepaymentServiceImpl implements RepaymentService {
         payment.setOutstandingAfterPayment(newPrincipal);
         payment.setPaymentType(PaymentType.PART_PAYMENT);
         payment.setRemarks("Part payment made");
-
         paymentRepository.save(payment);
+
+        loanStatusManager.updateLoanStatus(loan);
 
         PartPaymentResponse response = new PartPaymentResponse();
         response.setOldPrincipal(oldPrincipal);
@@ -231,16 +215,16 @@ public class RepaymentServiceImpl implements RepaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
 
         if (!loan.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Unauthorized access");
+            throw new IllegalArgumentException("Unauthorized");
         }
 
         if (!loan.getForeclosureAllowed()) {
-            throw new IllegalArgumentException("Foreclosure not allowed for this loan");
+            throw new IllegalArgumentException("Foreclosure not allowed");
         }
 
         if ("CLOSED".equalsIgnoreCase(loan.getStatus()) ||
                 "FORECLOSED".equalsIgnoreCase(loan.getStatus())) {
-            throw new IllegalArgumentException("Loan already closed or foreclosed");
+            throw new IllegalArgumentException("Loan already resolved");
         }
 
         BigDecimal principalOutstanding = loan.getPrincipal();
@@ -248,25 +232,23 @@ public class RepaymentServiceImpl implements RepaymentService {
                 ? BigDecimal.ZERO
                 : loan.getForeclosurePenaltyPercent();
 
-        BigDecimal penaltyAmount =
-                principalOutstanding.multiply(penaltyPercent)
-                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal penaltyAmount = principalOutstanding
+                .multiply(penaltyPercent)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 
-        BigDecimal totalAmountRequired =
-                principalOutstanding.add(penaltyAmount);
+        BigDecimal totalRequired = principalOutstanding.add(penaltyAmount);
 
-        if (amountPaid.compareTo(totalAmountRequired) < 0) {
-            throw new IllegalArgumentException("Insufficient amount for foreclosure");
+        if (amountPaid.compareTo(totalRequired) < 0) {
+            throw new IllegalArgumentException("Insufficient foreclosure amount");
         }
 
-        List<EmiSchedule> pendingEmis =
-                emiScheduleRepository.findByLoanAndStatusOrderByMonthIndexAsc(
-                        loan, EmiScheduleStatus.PENDING);
+        List<EmiSchedule> pending =
+                emiScheduleRepository.findByLoanAndStatusOrderByMonthIndexAsc(loan, EmiScheduleStatus.PENDING);
 
-        for (EmiSchedule emi : pendingEmis) {
-            emi.setStatus(EmiScheduleStatus.FORECLOSED);
+        for (EmiSchedule e : pending) {
+            e.setStatus(EmiScheduleStatus.FORECLOSED);
         }
-        emiScheduleRepository.saveAll(pendingEmis);
+        emiScheduleRepository.saveAll(pending);
 
         loan.setPrincipal(BigDecimal.ZERO);
         loan.setStatus("FORECLOSED");
@@ -280,19 +262,20 @@ public class RepaymentServiceImpl implements RepaymentService {
         payment.setAllocatedToPrincipal(principalOutstanding);
         payment.setOutstandingAfterPayment(BigDecimal.ZERO);
         payment.setPaymentType(PaymentType.FORECLOSURE);
-        payment.setRemarks("Loan foreclosed with penalty of " + penaltyAmount);
-
+        payment.setRemarks("Loan foreclosed with penalty " + penaltyAmount);
         paymentRepository.save(payment);
 
-        ForeclosureResponse response = new ForeclosureResponse();
-        response.setPrincipalOutstanding(principalOutstanding);
-        response.setPenaltyApplied(penaltyAmount);
-        response.setTotalAmountRequired(totalAmountRequired);
-        response.setAmountPaid(amountPaid);
-        response.setStatus(loan.getStatus());
-        response.setPendingEmiCountClosed(pendingEmis.size());
+        loanStatusManager.updateLoanStatus(loan);
 
-        return response;
+        ForeclosureResponse resp = new ForeclosureResponse();
+        resp.setPrincipalOutstanding(principalOutstanding);
+        resp.setPenaltyApplied(penaltyAmount);
+        resp.setTotalAmountRequired(totalRequired);
+        resp.setAmountPaid(amountPaid);
+        resp.setStatus(loan.getStatus());
+        resp.setPendingEmiCountClosed(pending.size());
+
+        return resp;
     }
 
     @Override
@@ -302,30 +285,26 @@ public class RepaymentServiceImpl implements RepaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
 
         if (!loan.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Unauthorized access");
+            throw new IllegalArgumentException("Unauthorized");
         }
 
         List<Payment> payments = paymentRepository.findByLoanOrderByPaymentDateAsc(loan);
+        List<RepaymentHistoryResponse> list = new ArrayList<>();
 
-        List<RepaymentHistoryResponse> repaymentHistories = new ArrayList<>();
-
-        for(Payment payment : payments) {
-
-            RepaymentHistoryResponse response = new RepaymentHistoryResponse();
-            response.setPaymentId(payment.getId());
-            response.setPaymentDate(payment.getPaymentDate());
-            response.setAmountPaid(payment.getAmountPaid());
-            response.setAllocatedToInterest(payment.getAllocatedToInterest());
-            response.setAllocatedToPrincipal(payment.getAllocatedToPrincipal());
-            response.setOutstandingAfterPayment(payment.getOutstandingAfterPayment());
-            response.setPaymentType(payment.getPaymentType().toString());
-            response.setRemarks(payment.getRemarks());
-
-            repaymentHistories.add(response);
-
+        for (Payment p : payments) {
+            RepaymentHistoryResponse r = new RepaymentHistoryResponse();
+            r.setPaymentId(p.getId());
+            r.setPaymentDate(p.getPaymentDate());
+            r.setAmountPaid(p.getAmountPaid());
+            r.setAllocatedToInterest(p.getAllocatedToInterest());
+            r.setAllocatedToPrincipal(p.getAllocatedToPrincipal());
+            r.setOutstandingAfterPayment(p.getOutstandingAfterPayment());
+            r.setPaymentType(p.getPaymentType().toString());
+            r.setRemarks(p.getRemarks());
+            list.add(r);
         }
 
-        return repaymentHistories;
+        return list;
     }
 
     @Override
@@ -337,19 +316,14 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         Loan loan = emi.getLoan();
 
-        // Validate ownership
         if (!loan.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("Unauthorized");
         }
 
-        // Validate EMI status
-        if (emi.getStatus() == EmiScheduleStatus.PAID ||
-                emi.getStatus() == EmiScheduleStatus.MISSED ||
-                emi.getStatus() == EmiScheduleStatus.FORECLOSED) {
-            throw new IllegalArgumentException("EMI cannot be marked as PAID");
+        if (emi.getStatus() != EmiScheduleStatus.PENDING) {
+            throw new IllegalArgumentException("EMI cannot be marked PAID");
         }
 
-        // Default payment date
         if (actualPaymentDate == null) {
             actualPaymentDate = LocalDate.now();
         }
@@ -358,63 +332,48 @@ public class RepaymentServiceImpl implements RepaymentService {
         BigDecimal monthlyRate = loan.getInterestRate()
                 .divide(BigDecimal.valueOf(1200), 34, RoundingMode.HALF_UP);
 
-        BigDecimal interestComponent = openingBalance
-                .multiply(monthlyRate)
+        BigDecimal interest = openingBalance.multiply(monthlyRate)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal principalComponent = emi.getEmiAmount()
-                .subtract(interestComponent)
+        BigDecimal principal = emi.getEmiAmount().subtract(interest)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal closingBalance = openingBalance.subtract(principalComponent);
-        if (closingBalance.compareTo(BigDecimal.ZERO) < 0) {
-            closingBalance = BigDecimal.ZERO;
-        }
+        BigDecimal closingBalance = openingBalance.subtract(principal);
+        if (closingBalance.compareTo(BigDecimal.ZERO) < 0) closingBalance = BigDecimal.ZERO;
+
         closingBalance = closingBalance.setScale(2, RoundingMode.HALF_UP);
 
-        // Update EMI row
-        emi.setInterestComponent(interestComponent);
-        emi.setPrincipalComponent(principalComponent);
+        emi.setInterestComponent(interest);
+        emi.setPrincipalComponent(principal);
         emi.setClosingBalance(closingBalance);
         emi.setStatus(EmiScheduleStatus.PAID);
         emi.setPaymentDate(actualPaymentDate);
         emiScheduleRepository.save(emi);
 
-        // Update Loan principal
         loan.setPrincipal(closingBalance);
-
-        if (closingBalance.compareTo(BigDecimal.ZERO) == 0) {
-            loan.setStatus("CLOSED");
-        } else {
-            loan.setStatus("ACTIVE");
-        }
-
         loanRepository.save(loan);
 
-        // Create Payment Ledger Entry
-        Payment payment = new Payment();
-        payment.setLoan(loan);
-        payment.setPaymentDate(actualPaymentDate);
-        payment.setAmountPaid(emi.getEmiAmount());
-        payment.setAllocatedToInterest(interestComponent);
-        payment.setAllocatedToPrincipal(principalComponent);
-        payment.setOutstandingAfterPayment(closingBalance);
-        payment.setPaymentType(PaymentType.EMI);
-        payment.setRemarks("Manual EMI marked as paid: Month " + emi.getMonthIndex());
+        Payment p = new Payment();
+        p.setLoan(loan);
+        p.setPaymentDate(actualPaymentDate);
+        p.setAmountPaid(emi.getEmiAmount());
+        p.setAllocatedToInterest(interest);
+        p.setAllocatedToPrincipal(principal);
+        p.setOutstandingAfterPayment(closingBalance);
+        p.setPaymentType(PaymentType.EMI);
+        p.setRemarks("Manual EMI paid: Month " + emi.getMonthIndex());
+        paymentRepository.save(p);
 
-        paymentRepository.save(payment);
+        loanStatusManager.updateLoanStatus(loan);
 
-        // Build Response
         MarkPaidResponse response = new MarkPaidResponse();
         response.setEmiId(emi.getId());
         response.setMonthIndex(emi.getMonthIndex());
         response.setActualPaymentDate(actualPaymentDate);
-
         response.setOpeningBalance(openingBalance);
-        response.setInterestComponent(interestComponent);
-        response.setPrincipalComponent(principalComponent);
+        response.setInterestComponent(interest);
+        response.setPrincipalComponent(principal);
         response.setClosingBalance(closingBalance);
-
         response.setUpdatedLoanOutstanding(closingBalance);
         response.setLoanStatus(loan.getStatus());
 
@@ -430,46 +389,26 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         Loan loan = emi.getLoan();
 
-        // Validate ownership
         if (!loan.getUser().getId().equals(userId)) {
-            throw new IllegalArgumentException("Unauthorized access");
+            throw new IllegalArgumentException("Unauthorized");
         }
 
-        // Allowed statuses for marking MISSED
-        if (emi.getStatus() == EmiScheduleStatus.PAID ||
-                emi.getStatus() == EmiScheduleStatus.MISSED ||
-                emi.getStatus() == EmiScheduleStatus.FORECLOSED) {
-            throw new IllegalArgumentException("EMI cannot be marked as MISSED");
+        if (emi.getStatus() != EmiScheduleStatus.PENDING) {
+            throw new IllegalArgumentException("EMI cannot be marked MISSED");
         }
 
-        // Update status
         emi.setStatus(EmiScheduleStatus.MISSED);
         emiScheduleRepository.save(emi);
 
-        // Update loan status
-        // BUSINESS RULE:
-        // If any EMI is MISSED → loan must be OVERDUE
-        boolean hasMissed = emiScheduleRepository
-                .findByLoanOrderByMonthIndexAsc(loan)
-                .stream()
-                .anyMatch(e -> e.getStatus() == EmiScheduleStatus.MISSED);
+        loanStatusManager.updateLoanStatus(loan);
 
-        if (hasMissed) {
-            loan.setStatus("OVERDUE");
-        }
+        MarkMissedResponse r = new MarkMissedResponse();
+        r.setEmiId(emi.getId());
+        r.setMonthIndex(emi.getMonthIndex());
+        r.setDueDate(emi.getDueDate());
+        r.setStatus("MISSED");
+        r.setLoanStatus(loan.getStatus());
 
-        loanRepository.save(loan);
-
-        // Build response DTO
-        MarkMissedResponse response = new MarkMissedResponse();
-        response.setEmiId(emi.getId());
-        response.setMonthIndex(emi.getMonthIndex());
-        response.setDueDate(emi.getDueDate());
-        response.setStatus("MISSED");
-        response.setLoanStatus(loan.getStatus());
-
-        return response;
+        return r;
     }
-
-
 }
