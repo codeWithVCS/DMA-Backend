@@ -1,10 +1,7 @@
 package org.chandra.dmabackend.service.impl;
 
 import jakarta.transaction.Transactional;
-import org.chandra.dmabackend.dto.response.ForeclosureResponse;
-import org.chandra.dmabackend.dto.response.PartPaymentResponse;
-import org.chandra.dmabackend.dto.response.PayEmiResponse;
-import org.chandra.dmabackend.dto.response.RepaymentHistoryResponse;
+import org.chandra.dmabackend.dto.response.*;
 import org.chandra.dmabackend.model.*;
 import org.chandra.dmabackend.repository.EmiScheduleRepository;
 import org.chandra.dmabackend.repository.LoanRepository;
@@ -330,4 +327,99 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         return repaymentHistories;
     }
+
+    @Override
+    @Transactional
+    public MarkPaidResponse markEmiPaid(Long emiId, Long userId, LocalDate actualPaymentDate) {
+
+        EmiSchedule emi = emiScheduleRepository.findById(emiId)
+                .orElseThrow(() -> new IllegalArgumentException("EMI not found"));
+
+        Loan loan = emi.getLoan();
+
+        // Validate ownership
+        if (!loan.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Unauthorized");
+        }
+
+        // Validate EMI status
+        if (emi.getStatus() == EmiScheduleStatus.PAID ||
+                emi.getStatus() == EmiScheduleStatus.MISSED ||
+                emi.getStatus() == EmiScheduleStatus.FORECLOSED) {
+            throw new IllegalArgumentException("EMI cannot be marked as PAID");
+        }
+
+        // Default payment date
+        if (actualPaymentDate == null) {
+            actualPaymentDate = LocalDate.now();
+        }
+
+        BigDecimal openingBalance = emi.getOpeningBalance();
+        BigDecimal monthlyRate = loan.getInterestRate()
+                .divide(BigDecimal.valueOf(1200), 34, RoundingMode.HALF_UP);
+
+        BigDecimal interestComponent = openingBalance
+                .multiply(monthlyRate)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal principalComponent = emi.getEmiAmount()
+                .subtract(interestComponent)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal closingBalance = openingBalance.subtract(principalComponent);
+        if (closingBalance.compareTo(BigDecimal.ZERO) < 0) {
+            closingBalance = BigDecimal.ZERO;
+        }
+        closingBalance = closingBalance.setScale(2, RoundingMode.HALF_UP);
+
+        // Update EMI row
+        emi.setInterestComponent(interestComponent);
+        emi.setPrincipalComponent(principalComponent);
+        emi.setClosingBalance(closingBalance);
+        emi.setStatus(EmiScheduleStatus.PAID);
+        emi.setPaymentDate(actualPaymentDate);
+        emiScheduleRepository.save(emi);
+
+        // Update Loan principal
+        loan.setPrincipal(closingBalance);
+
+        if (closingBalance.compareTo(BigDecimal.ZERO) == 0) {
+            loan.setStatus("CLOSED");
+        } else {
+            loan.setStatus("ACTIVE");
+        }
+
+        loanRepository.save(loan);
+
+        // Create Payment Ledger Entry
+        Payment payment = new Payment();
+        payment.setLoan(loan);
+        payment.setPaymentDate(actualPaymentDate);
+        payment.setAmountPaid(emi.getEmiAmount());
+        payment.setAllocatedToInterest(interestComponent);
+        payment.setAllocatedToPrincipal(principalComponent);
+        payment.setOutstandingAfterPayment(closingBalance);
+        payment.setPaymentType(PaymentType.EMI);
+        payment.setRemarks("Manual EMI marked as paid: Month " + emi.getMonthIndex());
+
+        paymentRepository.save(payment);
+
+        // Build Response
+        MarkPaidResponse response = new MarkPaidResponse();
+        response.setEmiId(emi.getId());
+        response.setMonthIndex(emi.getMonthIndex());
+        response.setActualPaymentDate(actualPaymentDate);
+
+        response.setOpeningBalance(openingBalance);
+        response.setInterestComponent(interestComponent);
+        response.setPrincipalComponent(principalComponent);
+        response.setClosingBalance(closingBalance);
+
+        response.setUpdatedLoanOutstanding(closingBalance);
+        response.setLoanStatus(loan.getStatus());
+
+        return response;
+    }
+
+
 }

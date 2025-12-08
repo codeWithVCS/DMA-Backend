@@ -29,6 +29,9 @@ public class EmiSchedule {
     @Column(nullable = false)
     private LocalDate dueDate;
 
+    @Column
+    private LocalDate paymentDate;
+
     @Column(nullable = false, precision = 18, scale = 2)
     private BigDecimal openingBalance;
 

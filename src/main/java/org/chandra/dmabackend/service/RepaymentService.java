@@ -1,11 +1,9 @@
 package org.chandra.dmabackend.service;
 
-import org.chandra.dmabackend.dto.response.ForeclosureResponse;
-import org.chandra.dmabackend.dto.response.PartPaymentResponse;
-import org.chandra.dmabackend.dto.response.PayEmiResponse;
-import org.chandra.dmabackend.dto.response.RepaymentHistoryResponse;
+import org.chandra.dmabackend.dto.response.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 public interface RepaymentService {
@@ -17,5 +15,7 @@ public interface RepaymentService {
     ForeclosureResponse forecloseLoan(Long loanId, Long userId, BigDecimal amountPaid);
 
     List<RepaymentHistoryResponse> getRepaymentHistory(Long loanId, Long userId);
+
+    MarkPaidResponse markEmiPaid(Long emiId, Long userId, LocalDate actualPaymentDate);
 
 }

@@ -1,12 +1,10 @@
 package org.chandra.dmabackend.controller;
 
 import org.chandra.dmabackend.dto.request.ForeclosureRequest;
+import org.chandra.dmabackend.dto.request.MarkPaidRequest;
 import org.chandra.dmabackend.dto.request.PartPaymentRequest;
-import org.chandra.dmabackend.dto.response.ForeclosureResponse;
-import org.chandra.dmabackend.dto.response.PartPaymentResponse;
+import org.chandra.dmabackend.dto.response.*;
 import org.chandra.dmabackend.dto.request.PayEmiRequest;
-import org.chandra.dmabackend.dto.response.PayEmiResponse;
-import org.chandra.dmabackend.dto.response.RepaymentHistoryResponse;
 import org.chandra.dmabackend.model.Loan;
 import org.chandra.dmabackend.model.User;
 import org.chandra.dmabackend.repository.LoanRepository;
@@ -77,5 +75,20 @@ public class RepaymentController {
 
         return ResponseEntity.status(HttpStatus.OK).body(responses);
     }
+
+    @PostMapping("/api/emi/{emiId}/mark-paid")
+    public ResponseEntity<MarkPaidResponse> markPaid(@AuthenticationPrincipal UserDetails user,
+                                                     @PathVariable Long emiId,
+                                                     @RequestBody MarkPaidRequest request) {
+
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid Credentials"));
+
+        MarkPaidResponse response =
+                repaymentService.markEmiPaid(emiId, dbUser.getId(), request.getActualPaymentDate());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
 
 }
