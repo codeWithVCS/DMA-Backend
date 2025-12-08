@@ -1,7 +1,10 @@
 package org.chandra.dmabackend.service;
 
 import org.chandra.dmabackend.dto.response.LoanHealthResponse;
+import org.chandra.dmabackend.dto.response.LoanSummaryResponse;
 import org.chandra.dmabackend.model.Loan;
+
+import java.util.List;
 
 public interface LoanStatusManager {
 
@@ -11,4 +14,5 @@ public interface LoanStatusManager {
 
     String evaluateLoanStatus(Long loanId);
 
+    List<LoanSummaryResponse> getUserLoanSummaries(Long userId);
 }

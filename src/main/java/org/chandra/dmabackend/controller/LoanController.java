@@ -6,6 +6,7 @@ import org.chandra.dmabackend.dto.request.NewLoanRequest;
 import org.chandra.dmabackend.dto.response.EmiScheduleResponse;
 import org.chandra.dmabackend.dto.response.LoanHealthResponse;
 import org.chandra.dmabackend.dto.response.LoanResponse;
+import org.chandra.dmabackend.dto.response.LoanSummaryResponse;
 import org.chandra.dmabackend.model.Loan;
 import org.chandra.dmabackend.model.User;
 import org.chandra.dmabackend.repository.LoanRepository;
@@ -81,6 +82,19 @@ public class LoanController {
                 loanStatusManager.evaluateLoanHealth(loanId, dbUser.getId());
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/api/loans/summary")
+    public ResponseEntity<List<LoanSummaryResponse>> getLoanSummaries(
+            @AuthenticationPrincipal UserDetails user) {
+
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid Credentials"));
+
+        List<LoanSummaryResponse> summaries =
+                loanStatusManager.getUserLoanSummaries(dbUser.getId());
+
+        return ResponseEntity.ok(summaries);
     }
 
 

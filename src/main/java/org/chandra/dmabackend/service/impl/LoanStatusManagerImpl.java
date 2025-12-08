@@ -2,6 +2,7 @@ package org.chandra.dmabackend.service.impl;
 
 import jakarta.transaction.Transactional;
 import org.chandra.dmabackend.dto.response.LoanHealthResponse;
+import org.chandra.dmabackend.dto.response.LoanSummaryResponse;
 import org.chandra.dmabackend.model.EmiSchedule;
 import org.chandra.dmabackend.model.EmiScheduleStatus;
 import org.chandra.dmabackend.model.Loan;
@@ -11,6 +12,7 @@ import org.chandra.dmabackend.service.LoanStatusManager;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -125,4 +127,62 @@ public class LoanStatusManagerImpl implements LoanStatusManager {
 
         return response;
     }
+
+    @Override
+    public List<LoanSummaryResponse> getUserLoanSummaries(Long userId) {
+
+        List<Loan> loans = loanRepository.findByUserId(userId);
+
+        List<LoanSummaryResponse> summaries = new ArrayList<>();
+
+        for (Loan loan : loans) {
+
+            List<EmiSchedule> schedule =
+                    emiScheduleRepository.findByLoanOrderByMonthIndexAsc(loan);
+
+            int totalEmis = schedule.size();
+            int paidEmis = (int) schedule.stream().filter(e -> e.getStatus() == EmiScheduleStatus.PAID).count();
+            int pendingEmis = (int) schedule.stream().filter(e -> e.getStatus() == EmiScheduleStatus.PENDING).count();
+            int missedEmis = (int) schedule.stream().filter(e -> e.getStatus() == EmiScheduleStatus.MISSED).count();
+
+            EmiSchedule nextPending = schedule.stream()
+                    .filter(e -> e.getStatus() == EmiScheduleStatus.PENDING)
+                    .findFirst()
+                    .orElse(null);
+
+            LoanSummaryResponse dto = new LoanSummaryResponse();
+
+            dto.setLoanId(loan.getId());
+            dto.setLoanName(loan.getLoanName());
+            dto.setCategory(loan.getCategory());
+            dto.setLender(loan.getLender());
+            dto.setPrincipalOutstanding(loan.getPrincipal());
+            dto.setLoanStatus(loan.getStatus());
+
+            dto.setTotalEmis(totalEmis);
+            dto.setPaidEmis(paidEmis);
+            dto.setPendingEmis(pendingEmis);
+            dto.setMissedEmis(missedEmis);
+
+            if (nextPending != null) {
+                dto.setNextEmiId(nextPending.getId());
+                dto.setNextMonthIndex(nextPending.getMonthIndex());
+                dto.setNextDueDate(nextPending.getDueDate());
+                dto.setNextEmiAmount(nextPending.getEmiAmount());
+            }
+
+            dto.setHasMissedEmis(missedEmis > 0);
+
+            dto.setCanPayNextEmi(
+                    nextPending != null &&
+                            !"CLOSED".equalsIgnoreCase(loan.getStatus()) &&
+                            !"FORECLOSED".equalsIgnoreCase(loan.getStatus())
+            );
+
+            summaries.add(dto);
+        }
+
+        return summaries;
+    }
+
 }
