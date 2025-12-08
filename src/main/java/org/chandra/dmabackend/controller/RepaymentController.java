@@ -1,5 +1,7 @@
 package org.chandra.dmabackend.controller;
 
+import org.chandra.dmabackend.dto.request.PartPaymentRequest;
+import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.request.PayEmiRequest;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
 import org.chandra.dmabackend.model.User;
@@ -36,6 +38,17 @@ public class RepaymentController {
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
 
+    }
+
+    @PostMapping("/api/repayment/part-payment/{loanId}")
+    public ResponseEntity<PartPaymentResponse> makePartPayment(@AuthenticationPrincipal UserDetails user,
+                                                               @PathVariable Long loanId,
+                                                               @RequestBody PartPaymentRequest request){
+        User dbUser =  userRepository.findByEmail(user.getUsername())
+                .orElseThrow(()->new IllegalArgumentException("Invalid Credentials"));
+        PartPaymentResponse response = repaymentService.partPayment(loanId, dbUser.getId(), request.getAmountPaid());
+
+        return  ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
 }

@@ -1,17 +1,20 @@
 package org.chandra.dmabackend.service.impl;
 
 import jakarta.transaction.Transactional;
+import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
 import org.chandra.dmabackend.model.*;
 import org.chandra.dmabackend.repository.EmiScheduleRepository;
 import org.chandra.dmabackend.repository.LoanRepository;
 import org.chandra.dmabackend.repository.PaymentRepository;
+import org.chandra.dmabackend.service.EmiScheduleGeneratorService;
 import org.chandra.dmabackend.service.RepaymentService;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
 
 @Service
 @Transactional
@@ -20,13 +23,15 @@ public class RepaymentServiceImpl implements RepaymentService {
     private final EmiScheduleRepository emiScheduleRepository;
     private final LoanRepository loanRepository;
     private final PaymentRepository paymentRepository;
+    private final EmiScheduleGeneratorService emiScheduleGeneratorService;
 
     public RepaymentServiceImpl(EmiScheduleRepository emiScheduleRepository,
                                 LoanRepository loanRepository,
-                                PaymentRepository paymentRepository) {
+                                PaymentRepository paymentRepository, EmiScheduleGeneratorService emiScheduleGeneratorService) {
         this.emiScheduleRepository = emiScheduleRepository;
         this.loanRepository = loanRepository;
         this.paymentRepository = paymentRepository;
+        this.emiScheduleGeneratorService = emiScheduleGeneratorService;
     }
 
     @Override
@@ -117,4 +122,105 @@ public class RepaymentServiceImpl implements RepaymentService {
 
         return response;
     }
+
+    @Override
+    @Transactional
+    public PartPaymentResponse partPayment(Long loanId, Long userId, BigDecimal amountPaid) {
+
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
+
+        if (!loan.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Unauthorized access");
+        }
+
+        if (!loan.getPartPaymentAllowed()) {
+            throw new IllegalArgumentException("Part-payment not allowed for this loan");
+        }
+
+        if ("CLOSED".equalsIgnoreCase(loan.getStatus()) ||
+                "FORECLOSED".equalsIgnoreCase(loan.getStatus())) {
+            throw new IllegalArgumentException("Loan is already closed");
+        }
+
+        if (amountPaid == null || amountPaid.compareTo(BigDecimal.valueOf(1000)) < 0) {
+            throw new IllegalArgumentException("Amount too low for part-payment");
+        }
+
+        BigDecimal oldPrincipal = loan.getPrincipal();
+        BigDecimal newPrincipal = oldPrincipal.subtract(amountPaid);
+
+        if (newPrincipal.compareTo(BigDecimal.ZERO) < 0) {
+            newPrincipal = BigDecimal.ZERO;
+        }
+
+        loan.setPrincipal(newPrincipal);
+
+        List<EmiSchedule> schedule =
+                emiScheduleRepository.findByLoanOrderByMonthIndexAsc(loan);
+
+        EmiSchedule firstPendingEmi = schedule.stream()
+                .filter(emi -> emi.getStatus() == EmiScheduleStatus.PENDING)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No pending EMI entries"));
+
+        LocalDate nextDueDate = firstPendingEmi.getDueDate();
+
+        List<EmiSchedule> pendingEmis =
+                emiScheduleRepository.findByLoanAndStatusOrderByMonthIndexAsc(loan, EmiScheduleStatus.PENDING);
+
+        emiScheduleRepository.deleteAll(pendingEmis);
+
+        Loan loanView = new Loan();
+        loanView.setUser(loan.getUser());
+        loanView.setLoanName(loan.getLoanName());
+        loanView.setCategory(loan.getCategory());
+        loanView.setLender(loan.getLender());
+        loanView.setPrincipal(newPrincipal);
+        loanView.setInterestRate(loan.getInterestRate());
+        loanView.setEmiAmount(loan.getEmiAmount());
+        loanView.setTenureMonths(loan.getTenureMonths());
+        loanView.setEmiStartDate(nextDueDate);
+        loanView.setStartDate(loan.getStartDate());
+        loanView.setForeclosureAllowed(loan.getForeclosureAllowed());
+        loanView.setForeclosurePenaltyPercent(loan.getForeclosurePenaltyPercent());
+        loanView.setPartPaymentAllowed(loan.getPartPaymentAllowed());
+        loanView.setStatus(loan.getStatus());
+
+        List<EmiSchedule> newSchedule = emiScheduleGeneratorService.generateSchedule(loanView);
+
+        for (EmiSchedule emi : newSchedule) {
+            emi.setLoan(loan);
+        }
+
+        emiScheduleRepository.saveAll(newSchedule);
+
+        if (newPrincipal.compareTo(BigDecimal.ZERO) == 0) {
+            loan.setStatus("CLOSED");
+        }
+
+        loanRepository.save(loan);
+
+        Payment payment = new Payment();
+        payment.setLoan(loan);
+        payment.setPaymentDate(LocalDate.now());
+        payment.setAmountPaid(amountPaid);
+        payment.setAllocatedToInterest(BigDecimal.ZERO);
+        payment.setAllocatedToPrincipal(amountPaid);
+        payment.setOutstandingAfterPayment(newPrincipal);
+        payment.setPaymentType(PaymentType.PART_PAYMENT);
+        payment.setRemarks("Part payment made");
+
+        paymentRepository.save(payment);
+
+        PartPaymentResponse response = new PartPaymentResponse();
+        response.setOldPrincipal(oldPrincipal);
+        response.setNewPrincipal(newPrincipal);
+        response.setAmountPaid(amountPaid);
+        response.setEmiRowsRecalculated(newSchedule.size());
+        response.setLoanStatus(loan.getStatus());
+
+        return response;
+    }
+
 }

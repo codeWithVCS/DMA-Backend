@@ -1,6 +1,7 @@
 package org.chandra.dmabackend.repository;
 
 import org.chandra.dmabackend.model.EmiSchedule;
+import org.chandra.dmabackend.model.EmiScheduleStatus;
 import org.chandra.dmabackend.model.Loan;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -11,5 +12,7 @@ import java.util.List;
 public interface EmiScheduleRepository extends JpaRepository<EmiSchedule,Long> {
 
     List<EmiSchedule> findByLoanOrderByMonthIndexAsc(Loan loan);
+
+    List<EmiSchedule> findByLoanAndStatusOrderByMonthIndexAsc(Loan loan, EmiScheduleStatus status);
 
 }
