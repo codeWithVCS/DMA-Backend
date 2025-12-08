@@ -1,19 +1,24 @@
 package org.chandra.dmabackend.service.impl;
 
+import jakarta.transaction.Transactional;
 import org.chandra.dmabackend.dto.DerivedDates;
 import org.chandra.dmabackend.dto.request.ExistingLoanRequest;
 import org.chandra.dmabackend.dto.request.NewLoanRequest;
 import org.chandra.dmabackend.dto.response.LoanResponse;
+import org.chandra.dmabackend.model.EmiSchedule;
 import org.chandra.dmabackend.model.Loan;
 import org.chandra.dmabackend.model.User;
+import org.chandra.dmabackend.repository.EmiScheduleRepository;
 import org.chandra.dmabackend.repository.LoanRepository;
 import org.chandra.dmabackend.repository.UserRepository;
 import org.chandra.dmabackend.service.EmiCalculationService;
+import org.chandra.dmabackend.service.EmiScheduleGeneratorService;
 import org.chandra.dmabackend.service.LoanDateService;
 import org.chandra.dmabackend.service.LoanService;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Service
 public class LoanServiceImpl implements LoanService {
@@ -22,18 +27,23 @@ public class LoanServiceImpl implements LoanService {
     private final LoanDateService loanDateService;
     private final EmiCalculationService emiCalculationService;
     private final LoanRepository loanRepository;
+    private final EmiScheduleGeneratorService emiScheduleGeneratorService;
+    private final EmiScheduleRepository emiScheduleRepository;
 
     public LoanServiceImpl(UserRepository userRepository,
                            LoanDateService loanDateService,
                            EmiCalculationService emiCalculationService,
-                           LoanRepository loanRepository) {
+                           LoanRepository loanRepository, EmiScheduleGeneratorService emiScheduleGeneratorService, EmiScheduleRepository emiScheduleRepository) {
         this.userRepository = userRepository;
         this.loanDateService = loanDateService;
         this.emiCalculationService = emiCalculationService;
         this.loanRepository = loanRepository;
+        this.emiScheduleGeneratorService = emiScheduleGeneratorService;
+        this.emiScheduleRepository = emiScheduleRepository;
     }
 
     @Override
+    @Transactional
     public LoanResponse createNewLoan(NewLoanRequest request, Long userId) {
 
         User user = userRepository.findById(userId)
@@ -69,6 +79,10 @@ public class LoanServiceImpl implements LoanService {
 
         Loan savedLoan = loanRepository.save(loan);
 
+        List<EmiSchedule> schedule = emiScheduleGeneratorService.generateSchedule(savedLoan);
+
+        emiScheduleRepository.saveAll(schedule);
+
         LoanResponse response = new LoanResponse();
         response.setId(savedLoan.getId());
         response.setLoanName(savedLoan.getLoanName());
@@ -86,6 +100,7 @@ public class LoanServiceImpl implements LoanService {
     }
 
     @Override
+    @Transactional
     public LoanResponse createExistingLoan(ExistingLoanRequest request, Long userId) {
 
         User user = userRepository.findById(userId)
@@ -126,6 +141,10 @@ public class LoanServiceImpl implements LoanService {
         loan.setStatus("ACTIVE");
 
         Loan savedLoan = loanRepository.save(loan);
+
+        List<EmiSchedule> schedule = emiScheduleGeneratorService.generateSchedule(savedLoan);
+
+        emiScheduleRepository.saveAll(schedule);
 
         LoanResponse response = new LoanResponse();
         response.setId(savedLoan.getId());
