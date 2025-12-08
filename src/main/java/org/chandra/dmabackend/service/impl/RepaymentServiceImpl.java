@@ -4,6 +4,7 @@ import jakarta.transaction.Transactional;
 import org.chandra.dmabackend.dto.response.ForeclosureResponse;
 import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
+import org.chandra.dmabackend.dto.response.RepaymentHistoryResponse;
 import org.chandra.dmabackend.model.*;
 import org.chandra.dmabackend.repository.EmiScheduleRepository;
 import org.chandra.dmabackend.repository.LoanRepository;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -296,4 +298,36 @@ public class RepaymentServiceImpl implements RepaymentService {
         return response;
     }
 
+    @Override
+    public List<RepaymentHistoryResponse> getRepaymentHistory(Long loanId, Long userId) {
+
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
+
+        if (!loan.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Unauthorized access");
+        }
+
+        List<Payment> payments = paymentRepository.findByLoanOrderByPaymentDateAsc(loan);
+
+        List<RepaymentHistoryResponse> repaymentHistories = new ArrayList<>();
+
+        for(Payment payment : payments) {
+
+            RepaymentHistoryResponse response = new RepaymentHistoryResponse();
+            response.setPaymentId(payment.getId());
+            response.setPaymentDate(payment.getPaymentDate());
+            response.setAmountPaid(payment.getAmountPaid());
+            response.setAllocatedToInterest(payment.getAllocatedToInterest());
+            response.setAllocatedToPrincipal(payment.getAllocatedToPrincipal());
+            response.setOutstandingAfterPayment(payment.getOutstandingAfterPayment());
+            response.setPaymentType(payment.getPaymentType().toString());
+            response.setRemarks(payment.getRemarks());
+
+            repaymentHistories.add(response);
+
+        }
+
+        return repaymentHistories;
+    }
 }

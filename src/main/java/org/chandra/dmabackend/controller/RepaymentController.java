@@ -6,27 +6,31 @@ import org.chandra.dmabackend.dto.response.ForeclosureResponse;
 import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.request.PayEmiRequest;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
+import org.chandra.dmabackend.dto.response.RepaymentHistoryResponse;
+import org.chandra.dmabackend.model.Loan;
 import org.chandra.dmabackend.model.User;
+import org.chandra.dmabackend.repository.LoanRepository;
 import org.chandra.dmabackend.repository.UserRepository;
 import org.chandra.dmabackend.service.RepaymentService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 public class RepaymentController {
 
     private final UserRepository userRepository;
     private final RepaymentService repaymentService;
+    private final LoanRepository loanRepository;
 
-    public RepaymentController(UserRepository userRepository, RepaymentService repaymentService) {
+    public RepaymentController(UserRepository userRepository, RepaymentService repaymentService, LoanRepository loanRepository) {
         this.userRepository = userRepository;
         this.repaymentService = repaymentService;
+        this.loanRepository = loanRepository;
     }
 
     @PostMapping("/api/repayment/emi/{emiId}")
@@ -62,6 +66,16 @@ public class RepaymentController {
         ForeclosureResponse response = repaymentService.forecloseLoan(loanId, dbUSer.getId(), request.getAmountPaid());
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @GetMapping("/api/repayment/history/{loanId}")
+    public ResponseEntity<List<RepaymentHistoryResponse>> getHistory(@AuthenticationPrincipal UserDetails user,
+                                                                     @PathVariable Long loanId){
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(()->new IllegalArgumentException("Invalid Credentials"));
+        List<RepaymentHistoryResponse> responses = repaymentService.getRepaymentHistory(loanId,dbUser.getId());
+
+        return ResponseEntity.status(HttpStatus.OK).body(responses);
     }
 
 }
