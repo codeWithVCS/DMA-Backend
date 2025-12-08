@@ -3,27 +3,32 @@ package org.chandra.dmabackend.controller;
 import jakarta.validation.Valid;
 import org.chandra.dmabackend.dto.request.ExistingLoanRequest;
 import org.chandra.dmabackend.dto.request.NewLoanRequest;
+import org.chandra.dmabackend.dto.response.EmiScheduleResponse;
 import org.chandra.dmabackend.dto.response.LoanResponse;
+import org.chandra.dmabackend.model.Loan;
 import org.chandra.dmabackend.model.User;
+import org.chandra.dmabackend.repository.LoanRepository;
 import org.chandra.dmabackend.repository.UserRepository;
 import org.chandra.dmabackend.service.LoanService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 public class LoanController {
 
     private final UserRepository userRepository;
     private final LoanService loanService;
+    private final LoanRepository loanRepository;
 
-    public LoanController(UserRepository userRepository, LoanService loanService) {
+    public LoanController(UserRepository userRepository,LoanRepository loanRepository, LoanService loanService) {
         this.userRepository = userRepository;
         this.loanService = loanService;
+        this.loanRepository = loanRepository;
     }
 
     @PostMapping("/api/loans/new")
@@ -46,6 +51,18 @@ public class LoanController {
         LoanResponse response = loanService.createExistingLoan(request, dbUser.getId());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping("/api/loans/{loanId}/schedule")
+    private ResponseEntity<List<EmiScheduleResponse>> getEmiSchedule(@AuthenticationPrincipal UserDetails user,
+                                                     @PathVariable Long loanId){
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(()->new IllegalArgumentException("Invalid Credentials"));
+
+        List<EmiScheduleResponse> responses = loanService.getSchedule(loanId, dbUser.getId());
+
+        return ResponseEntity.ok(responses);
+
     }
 
 }

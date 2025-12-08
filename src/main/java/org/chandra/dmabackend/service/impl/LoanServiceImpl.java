@@ -4,6 +4,7 @@ import jakarta.transaction.Transactional;
 import org.chandra.dmabackend.dto.DerivedDates;
 import org.chandra.dmabackend.dto.request.ExistingLoanRequest;
 import org.chandra.dmabackend.dto.request.NewLoanRequest;
+import org.chandra.dmabackend.dto.response.EmiScheduleResponse;
 import org.chandra.dmabackend.dto.response.LoanResponse;
 import org.chandra.dmabackend.model.EmiSchedule;
 import org.chandra.dmabackend.model.Loan;
@@ -18,6 +19,7 @@ import org.chandra.dmabackend.service.LoanService;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -160,5 +162,37 @@ public class LoanServiceImpl implements LoanService {
         response.setStatus(savedLoan.getStatus());
 
         return response;
+    }
+
+    @Override
+    public List<EmiScheduleResponse> getSchedule(Long loanId, Long userId) {
+
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
+
+        if (!loan.getUser().getId().equals(userId)){
+            throw new IllegalArgumentException("Unauthorized access");
+        }
+
+        List<EmiSchedule> schedule = emiScheduleRepository.findByLoanOrderByMonthIndexAsc(loan);
+
+        List<EmiScheduleResponse> scheduleResponse = new ArrayList<>();
+
+        for(EmiSchedule emiSchedule : schedule){
+
+            EmiScheduleResponse response = new EmiScheduleResponse();
+            response.setMonthIndex(emiSchedule.getMonthIndex());
+            response.setDueDate(emiSchedule.getDueDate());
+            response.setOpeningBalance(emiSchedule.getOpeningBalance());
+            response.setEmiAmount(emiSchedule.getEmiAmount());
+            response.setInterestComponent(emiSchedule.getInterestComponent());
+            response.setPrincipalComponent(emiSchedule.getPrincipalComponent());
+            response.setClosingBalance(emiSchedule.getClosingBalance());
+            response.setStatus(emiSchedule.getStatus().toString());
+
+            scheduleResponse.add(response);
+        }
+
+        return scheduleResponse;
     }
 }
