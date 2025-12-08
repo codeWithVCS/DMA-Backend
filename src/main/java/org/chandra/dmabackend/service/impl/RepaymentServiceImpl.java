@@ -1,6 +1,7 @@
 package org.chandra.dmabackend.service.impl;
 
 import jakarta.transaction.Transactional;
+import org.chandra.dmabackend.dto.response.ForeclosureResponse;
 import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
 import org.chandra.dmabackend.model.*;
@@ -219,6 +220,78 @@ public class RepaymentServiceImpl implements RepaymentService {
         response.setAmountPaid(amountPaid);
         response.setEmiRowsRecalculated(newSchedule.size());
         response.setLoanStatus(loan.getStatus());
+
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public ForeclosureResponse forecloseLoan(Long loanId, Long userId, BigDecimal amountPaid) {
+
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new IllegalArgumentException("Loan not found"));
+
+        if (!loan.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Unauthorized access");
+        }
+
+        if (!loan.getForeclosureAllowed()) {
+            throw new IllegalArgumentException("Foreclosure not allowed for this loan");
+        }
+
+        if ("CLOSED".equalsIgnoreCase(loan.getStatus()) ||
+                "FORECLOSED".equalsIgnoreCase(loan.getStatus())) {
+            throw new IllegalArgumentException("Loan already closed or foreclosed");
+        }
+
+        BigDecimal principalOutstanding = loan.getPrincipal();
+        BigDecimal penaltyPercent = loan.getForeclosurePenaltyPercent() == null
+                ? BigDecimal.ZERO
+                : loan.getForeclosurePenaltyPercent();
+
+        BigDecimal penaltyAmount =
+                principalOutstanding.multiply(penaltyPercent)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+        BigDecimal totalAmountRequired =
+                principalOutstanding.add(penaltyAmount);
+
+        if (amountPaid.compareTo(totalAmountRequired) < 0) {
+            throw new IllegalArgumentException("Insufficient amount for foreclosure");
+        }
+
+        List<EmiSchedule> pendingEmis =
+                emiScheduleRepository.findByLoanAndStatusOrderByMonthIndexAsc(
+                        loan, EmiScheduleStatus.PENDING);
+
+        for (EmiSchedule emi : pendingEmis) {
+            emi.setStatus(EmiScheduleStatus.FORECLOSED);
+        }
+        emiScheduleRepository.saveAll(pendingEmis);
+
+        loan.setPrincipal(BigDecimal.ZERO);
+        loan.setStatus("FORECLOSED");
+        loanRepository.save(loan);
+
+        Payment payment = new Payment();
+        payment.setLoan(loan);
+        payment.setPaymentDate(LocalDate.now());
+        payment.setAmountPaid(amountPaid);
+        payment.setAllocatedToInterest(BigDecimal.ZERO);
+        payment.setAllocatedToPrincipal(principalOutstanding);
+        payment.setOutstandingAfterPayment(BigDecimal.ZERO);
+        payment.setPaymentType(PaymentType.FORECLOSURE);
+        payment.setRemarks("Loan foreclosed with penalty of " + penaltyAmount);
+
+        paymentRepository.save(payment);
+
+        ForeclosureResponse response = new ForeclosureResponse();
+        response.setPrincipalOutstanding(principalOutstanding);
+        response.setPenaltyApplied(penaltyAmount);
+        response.setTotalAmountRequired(totalAmountRequired);
+        response.setAmountPaid(amountPaid);
+        response.setStatus(loan.getStatus());
+        response.setPendingEmiCountClosed(pendingEmis.size());
 
         return response;
     }

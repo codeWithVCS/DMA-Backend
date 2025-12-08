@@ -1,6 +1,8 @@
 package org.chandra.dmabackend.controller;
 
+import org.chandra.dmabackend.dto.request.ForeclosureRequest;
 import org.chandra.dmabackend.dto.request.PartPaymentRequest;
+import org.chandra.dmabackend.dto.response.ForeclosureResponse;
 import org.chandra.dmabackend.dto.response.PartPaymentResponse;
 import org.chandra.dmabackend.dto.request.PayEmiRequest;
 import org.chandra.dmabackend.dto.response.PayEmiResponse;
@@ -49,6 +51,17 @@ public class RepaymentController {
         PartPaymentResponse response = repaymentService.partPayment(loanId, dbUser.getId(), request.getAmountPaid());
 
         return  ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    @PostMapping("/api/repayment/foreclose/{loanId}")
+    public ResponseEntity<ForeclosureResponse> foreclose(@AuthenticationPrincipal UserDetails user,
+                                                         @PathVariable Long loanId,
+                                                         @RequestBody ForeclosureRequest request){
+        User dbUSer = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(()->new IllegalArgumentException("Invalid Credentials"));
+        ForeclosureResponse response = repaymentService.forecloseLoan(loanId, dbUSer.getId(), request.getAmountPaid());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
 }
