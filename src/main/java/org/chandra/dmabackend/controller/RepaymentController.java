@@ -90,5 +90,19 @@ public class RepaymentController {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
+    @PostMapping("/api/emi/{emiId}/mark-missed")
+    public ResponseEntity<MarkMissedResponse> markMissed(
+            @AuthenticationPrincipal UserDetails user,
+            @PathVariable Long emiId) {
+
+        User dbUser = userRepository.findByEmail(user.getUsername())
+                .orElseThrow(() -> new IllegalArgumentException("Invalid Credentials"));
+
+        MarkMissedResponse response =
+                repaymentService.markEmiMissed(emiId, dbUser.getId());
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
 
 }

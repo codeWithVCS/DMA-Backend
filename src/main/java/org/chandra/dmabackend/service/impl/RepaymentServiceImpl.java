@@ -421,5 +421,55 @@ public class RepaymentServiceImpl implements RepaymentService {
         return response;
     }
 
+    @Override
+    @Transactional
+    public MarkMissedResponse markEmiMissed(Long emiId, Long userId) {
+
+        EmiSchedule emi = emiScheduleRepository.findById(emiId)
+                .orElseThrow(() -> new IllegalArgumentException("EMI not found"));
+
+        Loan loan = emi.getLoan();
+
+        // Validate ownership
+        if (!loan.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("Unauthorized access");
+        }
+
+        // Allowed statuses for marking MISSED
+        if (emi.getStatus() == EmiScheduleStatus.PAID ||
+                emi.getStatus() == EmiScheduleStatus.MISSED ||
+                emi.getStatus() == EmiScheduleStatus.FORECLOSED) {
+            throw new IllegalArgumentException("EMI cannot be marked as MISSED");
+        }
+
+        // Update status
+        emi.setStatus(EmiScheduleStatus.MISSED);
+        emiScheduleRepository.save(emi);
+
+        // Update loan status
+        // BUSINESS RULE:
+        // If any EMI is MISSED → loan must be OVERDUE
+        boolean hasMissed = emiScheduleRepository
+                .findByLoanOrderByMonthIndexAsc(loan)
+                .stream()
+                .anyMatch(e -> e.getStatus() == EmiScheduleStatus.MISSED);
+
+        if (hasMissed) {
+            loan.setStatus("OVERDUE");
+        }
+
+        loanRepository.save(loan);
+
+        // Build response DTO
+        MarkMissedResponse response = new MarkMissedResponse();
+        response.setEmiId(emi.getId());
+        response.setMonthIndex(emi.getMonthIndex());
+        response.setDueDate(emi.getDueDate());
+        response.setStatus("MISSED");
+        response.setLoanStatus(loan.getStatus());
+
+        return response;
+    }
+
 
 }

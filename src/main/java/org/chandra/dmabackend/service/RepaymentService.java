@@ -18,4 +18,6 @@ public interface RepaymentService {
 
     MarkPaidResponse markEmiPaid(Long emiId, Long userId, LocalDate actualPaymentDate);
 
+    MarkMissedResponse markEmiMissed(Long emiId, Long userId);
+
 }
