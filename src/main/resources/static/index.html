@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debt Management App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+    <header class="hero">
+        <div>
+            <p class="eyebrow">Debt Management</p>
+            <h1>Stay on top of every loan</h1>
+            <p class="lede">Register or log in, create loans, pay EMIs, and track repayment health without leaving this page.</p>
+        </div>
+        <div class="session">
+            <div id="auth-status" class="pill pill-warning">Not authenticated</div>
+            <button id="logout-btn" class="ghost" type="button">Log out</button>
+        </div>
+    </header>
+
+    <nav class="tabs" aria-label="Application sections">
+        <button type="button" data-view-target="auth-view" class="tab active">Auth</button>
+        <button type="button" data-view-target="summary-view" class="tab">Summary</button>
+        <button type="button" data-view-target="loans-view" class="tab">Loans</button>
+        <button type="button" data-view-target="details-view" class="tab">Insights</button>
+        <button type="button" data-view-target="repayment-view" class="tab">Repayments</button>
+        <button type="button" data-view-target="activity-view" class="tab">Activity</button>
+    </nav>
+
+    <section id="auth-view" class="view grid two-cols active" aria-label="Authentication forms">
+        <div class="card">
+            <h2>Register</h2>
+            <form id="register-form" class="stack">
+                <label>Name<input type="text" name="name" required></label>
+                <label>Email<input type="email" name="email" required></label>
+                <label>Password<input type="password" name="password" minlength="6" required></label>
+                <button type="submit">Create account</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Log in</h2>
+            <form id="login-form" class="stack">
+                <label>Email<input type="email" name="email" required></label>
+                <label>Password<input type="password" name="password" required></label>
+                <button type="submit">Sign in</button>
+            </form>
+        </div>
+    </section>
+
+    <section id="summary-view" class="view card" aria-label="Loan summary">
+        <div class="section-header">
+            <h2>Loan summary</h2>
+            <button id="refresh-summary" type="button" class="ghost">Refresh</button>
+        </div>
+        <p class="muted">Fetch all loans for the logged-in user. Selecting a row populates the loan ID inputs in other forms.</p>
+        <div id="summary-table" class="table"></div>
+    </section>
+
+    <section id="loans-view" class="view grid two-cols" aria-label="Loan creation forms">
+        <div class="card">
+            <h2>Create new loan (calculated EMI)</h2>
+            <form id="new-loan-form" class="stack">
+                <label>Loan name<input type="text" name="loanName" required></label>
+                <label>Category<input type="text" name="category" required></label>
+                <label>Lender<input type="text" name="lender" required></label>
+                <label>Principal<input type="number" step="0.01" name="principal" required></label>
+                <label>Annual interest rate (%)<input type="number" step="0.01" name="annualInterestRate" required></label>
+                <label>Tenure (months)<input type="number" name="tenureMonths" min="1" required></label>
+                <label>Start date<input type="date" name="startDate"></label>
+                <label>EMI start date<input type="date" name="emiStartDate"></label>
+                <label>EMI day of month<input type="number" name="emiDayOfMonth" min="1" max="28" required></label>
+                <label>Foreclosure allowed
+                    <select name="foreclosureAllowed">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </label>
+                <label>Foreclosure penalty (%)<input type="number" step="0.01" name="foreclosurePenaltyPercent"></label>
+                <label>Part payment allowed
+                    <select name="partPaymentAllowed">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </label>
+                <button type="submit">Create new loan</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Add existing loan (known EMI)</h2>
+            <form id="existing-loan-form" class="stack">
+                <label>Loan name<input type="text" name="loanName" required></label>
+                <label>Category<input type="text" name="category" required></label>
+                <label>Lender<input type="text" name="lender" required></label>
+                <label>Principal<input type="number" step="0.01" name="principal" required></label>
+                <label>Annual interest rate (%)<input type="number" step="0.01" name="annualInterestRate" required></label>
+                <label>Tenure (months)<input type="number" name="tenureMonths" min="1" required></label>
+                <label>EMI amount<input type="number" step="0.01" name="emiAmount" required></label>
+                <label>Start date<input type="date" name="startDate"></label>
+                <label>EMI start date<input type="date" name="emiStartDate"></label>
+                <label>EMI day of month<input type="number" name="emiDayOfMonth" min="1" max="28" required></label>
+                <label>Foreclosure allowed
+                    <select name="foreclosureAllowed">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </label>
+                <label>Foreclosure penalty (%)<input type="number" step="0.01" name="foreclosurePenaltyPercent"></label>
+                <label>Part payment allowed
+                    <select name="partPaymentAllowed">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </label>
+                <button type="submit">Add existing loan</button>
+            </form>
+        </div>
+    </section>
+
+    <section id="details-view" class="view grid three-cols" aria-label="Loan insights">
+        <div class="card">
+            <h2>Loan health</h2>
+            <form id="loan-health-form" class="stack inline">
+                <label>Loan ID<input type="number" name="loanId" required></label>
+                <button type="submit">Fetch</button>
+            </form>
+            <div id="loan-health" class="table"></div>
+        </div>
+        <div class="card">
+            <h2>EMI schedule</h2>
+            <form id="schedule-form" class="stack inline">
+                <label>Loan ID<input type="number" name="loanId" required></label>
+                <button type="submit">Load schedule</button>
+            </form>
+            <div id="schedule-table" class="table"></div>
+        </div>
+        <div class="card">
+            <h2>Repayment history</h2>
+            <form id="history-form" class="stack inline">
+                <label>Loan ID<input type="number" name="loanId" required></label>
+                <button type="submit">Get history</button>
+            </form>
+            <div id="history-table" class="table"></div>
+        </div>
+    </section>
+
+    <section id="repayment-view" class="view grid three-cols" aria-label="Repayment actions">
+        <div class="card">
+            <h2>Pay EMI</h2>
+            <form id="pay-emi-form" class="stack">
+                <label>EMI ID<input type="number" name="emiId" required></label>
+                <label>Amount paid (leave blank for default)<input type="number" step="0.01" name="amountPaid"></label>
+                <button type="submit">Pay EMI</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Part payment</h2>
+            <form id="part-payment-form" class="stack">
+                <label>Loan ID<input type="number" name="loanId" required></label>
+                <label>Amount paid<input type="number" step="0.01" name="amountPaid" required></label>
+                <button type="submit">Submit</button>
+            </form>
+            <h2>Foreclose</h2>
+            <form id="foreclose-form" class="stack">
+                <label>Loan ID<input type="number" name="loanId" required></label>
+                <label>Amount paid<input type="number" step="0.01" name="amountPaid" required></label>
+                <button type="submit">Foreclose</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Adjust EMI status</h2>
+            <form id="mark-paid-form" class="stack">
+                <label>EMI ID<input type="number" name="emiId" required></label>
+                <label>Actual payment date<input type="date" name="actualPaymentDate" required></label>
+                <button type="submit">Mark paid</button>
+            </form>
+            <form id="mark-missed-form" class="stack">
+                <label>EMI ID<input type="number" name="emiId" required></label>
+                <button type="submit">Mark missed</button>
+            </form>
+        </div>
+    </section>
+
+    <section id="activity-view" class="view card" aria-label="Activity log">
+        <div class="section-header">
+            <h2>Activity log</h2>
+            <button type="button" id="clear-log" class="ghost">Clear log</button>
+        </div>
+        <div id="log" class="log"></div>
+    </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
