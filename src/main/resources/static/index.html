@@ -20,16 +20,7 @@
         </div>
     </header>
 
-    <nav class="tabs" aria-label="Application sections">
-        <button type="button" data-view-target="auth-view" class="tab active">Auth</button>
-        <button type="button" data-view-target="summary-view" class="tab">Summary</button>
-        <button type="button" data-view-target="loans-view" class="tab">Loans</button>
-        <button type="button" data-view-target="details-view" class="tab">Insights</button>
-        <button type="button" data-view-target="repayment-view" class="tab">Repayments</button>
-        <button type="button" data-view-target="activity-view" class="tab">Activity</button>
-    </nav>
-
-    <section id="auth-view" class="view grid two-cols active" aria-label="Authentication forms">
+    <section class="grid two-cols">
         <div class="card">
             <h2>Register</h2>
             <form id="register-form" class="stack">
@@ -49,7 +40,7 @@
         </div>
     </section>
 
-    <section id="summary-view" class="view card" aria-label="Loan summary">
+    <section class="card">
         <div class="section-header">
             <h2>Loan summary</h2>
             <button id="refresh-summary" type="button" class="ghost">Refresh</button>
@@ -58,7 +49,7 @@
         <div id="summary-table" class="table"></div>
     </section>
 
-    <section id="loans-view" class="view grid two-cols" aria-label="Loan creation forms">
+    <section class="grid two-cols">
         <div class="card">
             <h2>Create new loan (calculated EMI)</h2>
             <form id="new-loan-form" class="stack">
@@ -118,7 +109,7 @@
         </div>
     </section>
 
-    <section id="details-view" class="view grid three-cols" aria-label="Loan insights">
+    <section class="grid three-cols">
         <div class="card">
             <h2>Loan health</h2>
             <form id="loan-health-form" class="stack inline">
@@ -145,7 +136,7 @@
         </div>
     </section>
 
-    <section id="repayment-view" class="view grid three-cols" aria-label="Repayment actions">
+    <section class="grid three-cols">
         <div class="card">
             <h2>Pay EMI</h2>
             <form id="pay-emi-form" class="stack">
@@ -182,7 +173,7 @@
         </div>
     </section>
 
-    <section id="activity-view" class="view card" aria-label="Activity log">
+    <section class="card">
         <div class="section-header">
             <h2>Activity log</h2>
             <button type="button" id="clear-log" class="ghost">Clear log</button>

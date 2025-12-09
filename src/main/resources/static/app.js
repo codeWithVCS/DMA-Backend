@@ -1,22 +1,9 @@
 const logEl = document.getElementById('log');
 const authStatusEl = document.getElementById('auth-status');
 const logoutBtn = document.getElementById('logout-btn');
-const viewButtons = document.querySelectorAll('[data-view-target]');
-const views = document.querySelectorAll('.view');
 
 let authToken = localStorage.getItem('dma_token');
 let lastEmail = localStorage.getItem('dma_email');
-
-function setActiveView(targetId) {
-    views.forEach(section => {
-        const isActive = section.id === targetId;
-        section.classList.toggle('active', isActive);
-    });
-    viewButtons.forEach(btn => {
-        const isActive = btn.dataset.viewTarget === targetId;
-        btn.classList.toggle('active', isActive);
-    });
-}
 
 function log(message, data) {
     const entry = document.createElement('div');
@@ -135,7 +122,6 @@ async function handleLogin(event) {
     localStorage.setItem('dma_email', lastEmail);
     updateAuthStatus();
     log('Logged in successfully', data);
-    setActiveView('summary-view');
     refreshSummary();
 }
 
@@ -280,7 +266,6 @@ function bindForms() {
     document.getElementById('mark-missed-form').addEventListener('submit', wrapHandler(handleMarkMissed));
     document.getElementById('refresh-summary').addEventListener('click', wrapHandler(refreshSummary));
     document.getElementById('clear-log').addEventListener('click', () => logEl.innerHTML = '');
-    viewButtons.forEach(btn => btn.addEventListener('click', () => setActiveView(btn.dataset.viewTarget)));
     logoutBtn.addEventListener('click', () => {
         authToken = null;
         lastEmail = null;
@@ -288,7 +273,6 @@ function bindForms() {
         localStorage.removeItem('dma_email');
         updateAuthStatus();
         log('Logged out');
-        setActiveView('auth-view');
     });
 }
 
@@ -305,6 +289,5 @@ function wrapHandler(fn) {
 (function init() {
     bindForms();
     updateAuthStatus();
-    setActiveView(authToken ? 'summary-view' : 'auth-view');
     if (authToken) refreshSummary();
 })();
